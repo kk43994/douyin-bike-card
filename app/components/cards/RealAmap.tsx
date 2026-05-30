@@ -64,6 +64,7 @@ export function RealAmap({
   const amapRef = useRef<AnyAMap | null>(null);
   const fitDoneRef = useRef(false);
   const lastPolylineKeyRef = useRef<string>("");
+  const navStartedRef = useRef(false);
   const [is3D, setIs3D] = useState(true);
   const [showTraffic, setShowTraffic] = useState(true);
   const [showSatellite, setShowSatellite] = useState(false);
@@ -82,6 +83,9 @@ export function RealAmap({
           zoom: 15,
           pitch: 50,
           viewMode: "3D",
+          features: ["bg", "road", "point", "building"],
+          showBuildingBlock: true,
+          buildingAnimation: true,
           center: [120.7, 27.9],
           mapStyle: "amap://styles/dark",
         });
@@ -191,19 +195,44 @@ export function RealAmap({
     }
   }, [ready, origin, destination, polyline, accent]);
 
-  /** 我的位置: marker + 视角跟随 */
+  /** 我的位置: marker + 导航视角跟随 (zoom + pitch + rotation) */
   useEffect(() => {
     if (!ready || !mapRef.current || !amapRef.current) return;
     const ns = amapRef.current;
     const map = mapRef.current;
+
+    // 导航结束: 清 marker, 恢复地图视角
     if (!isValidLatLng(myPosition ?? null)) {
       if (myMarkerRef.current) {
         try { map.remove(myMarkerRef.current); } catch { /* ignore */ }
         myMarkerRef.current = null;
       }
+      if (navStartedRef.current) {
+        navStartedRef.current = false;
+        try {
+          map.setPitch(is3D ? 50 : 0);
+          map.setRotation?.(0);
+        } catch { /* ignore */ }
+      }
       return;
     }
+
     const pos: [number, number] = [myPosition!.lng, myPosition!.lat];
+
+    // 导航首帧: 切到驾驶视角 (大 pitch + 大 zoom + 跟随 bearing)
+    if (!navStartedRef.current) {
+      navStartedRef.current = true;
+      try {
+        if (map.setZoomAndCenter) {
+          map.setZoomAndCenter(18, pos);
+        } else {
+          map.setCenter?.(pos);
+        }
+        map.setPitch(70);
+        map.setRotation?.(-myBearing);
+      } catch { /* ignore */ }
+    }
+
     if (!myMarkerRef.current) {
       const m = new ns.Marker({
         position: pos,
@@ -217,19 +246,18 @@ export function RealAmap({
       try {
         myMarkerRef.current.setPosition(pos);
         myMarkerRef.current.setContent?.(myPositionHtml(accent, myBearing));
-      } catch {
-        /* ignore */
-      }
+      } catch { /* ignore */ }
     }
+
     if (followMe) {
       try {
         if (map.panTo) map.panTo(pos);
         else map.setCenter?.(pos);
-      } catch {
-        /* ignore */
-      }
+        // 让用户前方始终朝屏幕上方 (高德 setRotation 正向是顺时针, 取负让 bearing 朝上)
+        map.setRotation?.(-myBearing);
+      } catch { /* ignore */ }
     }
-  }, [ready, myPosition, myBearing, accent, followMe]);
+  }, [ready, myPosition, myBearing, accent, followMe, is3D]);
 
   useEffect(() => {
     if (!ready || !mapRef.current || !amapRef.current) return;
