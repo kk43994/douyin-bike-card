@@ -86,6 +86,18 @@ button {
   }
 }
 
+@keyframes meRing {
+  0%   { transform: scale(0.6); opacity: 0.8; }
+  100% { transform: scale(1.6); opacity: 0; }
+}
+
+.amap-me-ring {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  animation: meRing 1.6s ease-out infinite;
+}
+
 .terrain-lines {
   position: absolute;
   inset: -20%;

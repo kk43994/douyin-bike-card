@@ -31,6 +31,7 @@ import {
   fetchBicyclingRoute,
   fetchPoiAround,
   fetchWeather,
+  createFallbackRoute,
   scoreSceneFromPois,
 } from "./lib/amap";
 import {
@@ -40,10 +41,12 @@ import {
   type SceneKey,
   getNearbyRiders,
 } from "./lib/amap-mock";
-import { type GeoLocation, getCurrentLocationSmart } from "./lib/geo";
+import { type GeoLocation, type LatLng, getCurrentLocationSmart } from "./lib/geo";
+import { type NavCtl, type NavTick, startSimulatedRide } from "./lib/nav-controller";
 import { sceneProfiles } from "./lib/scene-profiles";
 import { useCardDeck } from "./lib/use-card-deck";
-import { isVoiceNavSupported, startStepwiseNav } from "./lib/voice-nav";
+import { isVoiceNavSupported } from "./lib/voice-nav";
+import type { NavProgress } from "./components/cards/card-types";
 
 type Phase = "idle" | "scanning" | "deck";
 type CardKey = "route" | "buddy";
@@ -66,16 +69,19 @@ export default function RideSnapDemo() {
   const [pickerOpen, setPickerOpen] = useState(false);
   const [voicePlaying, setVoicePlaying] = useState(false);
   const [voiceStepIdx, setVoiceStepIdx] = useState<number | null>(null);
+  const [myPosition, setMyPosition] = useState<LatLng | null>(null);
+  const [myBearing, setMyBearing] = useState(0);
+  const [navProgress, setNavProgress] = useState<NavProgress | null>(null);
 
   const scannerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<HTMLDivElement>(null);
   const progressTween = useRef<gsap.core.Tween | null>(null);
-  const voiceCtl = useRef<{ stop: () => void } | null>(null);
+  const navCtl = useRef<NavCtl | null>(null);
 
   const profile = sceneProfiles[scene];
   const deck = useCardDeck({ total: CARDS.length, enabled: phase === "deck" });
 
-  /** 稳定 origin 引用 (避免传给 RealAmap 时每次都是新对象触发 useEffect) */
+  /** 稳定 origin 引用 (按经纬度而非整对象做 dep, 避免每次 setOrigin 都触发下游 useEffect) */
   const originLatLng = useMemo(
     () => (origin ? { lng: origin.lng, lat: origin.lat } : null),
     [origin?.lng, origin?.lat],
@@ -97,7 +103,7 @@ export default function RideSnapDemo() {
 
   useEffect(() => {
     return () => {
-      voiceCtl.current?.stop();
+      navCtl.current?.stop();
     };
   }, []);
 
@@ -119,6 +125,7 @@ export default function RideSnapDemo() {
       let detect: SceneDetectResult;
       if (pois.length > 0) {
         const score = scoreSceneFromPois(pois);
+        setScene(score.scene);
         detect = {
           scene: score.scene,
           confidence: score.confidence,
@@ -132,9 +139,10 @@ export default function RideSnapDemo() {
           })),
         };
         if (score.scene !== nextScene) {
-          setToast(`高德识别更倾向: ${score.scene === "mountain" ? "山地" : "城市"}, 但保留你的选择`);
+          setToast(`高德识别为${score.scene === "mountain" ? "山地" : "城市"}赛道, 已自动切换攻略`);
         }
       } else {
+        setScene(nextScene);
         detect = {
           scene: nextScene,
           confidence: 70,
@@ -198,10 +206,13 @@ export default function RideSnapDemo() {
   );
 
   const resetDemo = () => {
-    voiceCtl.current?.stop();
-    voiceCtl.current = null;
+    navCtl.current?.stop();
+    navCtl.current = null;
     setVoicePlaying(false);
     setVoiceStepIdx(null);
+    setMyPosition(null);
+    setMyBearing(0);
+    setNavProgress(null);
     progressTween.current?.kill();
     setPhase("idle");
     setScanProgress(0);
@@ -247,6 +258,7 @@ export default function RideSnapDemo() {
         `已规划: ${(route.distance_m / 1000).toFixed(1)} km · ${Math.max(1, Math.round(route.duration_s / 60))} 分钟`,
       );
     } else {
+      setCustomRoute(createFallbackRoute({ lng: origin.lng, lat: origin.lat }, dest.loc));
       setRouteSource("amap-fallback");
       setToast("高德未返回路线 (key 错误或网络), 仅显示起终点");
     }
@@ -254,39 +266,48 @@ export default function RideSnapDemo() {
 
   const handleVoiceNav = () => {
     if (voicePlaying) {
-      voiceCtl.current?.stop();
-      voiceCtl.current = null;
+      navCtl.current?.stop();
+      navCtl.current = null;
       setVoicePlaying(false);
       setVoiceStepIdx(null);
+      setMyPosition(null);
+      setMyBearing(0);
+      setNavProgress(null);
       return;
     }
-    if (!customRoute || customRoute.steps.length === 0) {
-      setToast("还没有路线可播报");
+    if (!customRoute || customRoute.steps.length === 0 || customRoute.polyline.length < 2) {
+      setToast("还没有路线可导航");
       return;
     }
-    if (!isVoiceNavSupported()) {
-      setToast("浏览器不支持语音合成 (SpeechSynthesis)");
-      return;
-    }
+    const voiceOk = isVoiceNavSupported();
+    setToast(voiceOk ? "实时导航开始 · 模拟骑行 18 km/h" : "实时轨迹开始 (浏览器无 TTS)");
     const steps = customRoute.steps.map((s, idx) => ({
       index: idx,
       instruction: s.instruction,
       distance_m: s.distance_m,
-      duration_s: s.duration_s,
     }));
     setVoicePlaying(true);
     setVoiceStepIdx(0);
-    setToast("语音导航开始");
-    voiceCtl.current = startStepwiseNav(
+    setMyPosition(customRoute.polyline[0]);
+    setNavProgress({ progressM: 0, totalM: customRoute.distance_m, speedKmh: 18 });
+    navCtl.current = startSimulatedRide({
+      polyline: customRoute.polyline,
       steps,
-      (idx) => setVoiceStepIdx(idx),
-      () => {
+      speedKmh: 18,
+      tickHz: 8,
+      voice: voiceOk,
+      onTick: (e: NavTick) => {
+        setMyPosition(e.position);
+        setMyBearing(e.bearing_deg);
+        setNavProgress({ progressM: e.progressM, totalM: e.totalM, speedKmh: e.speedKmh });
+      },
+      onStepEnter: (idx) => setVoiceStepIdx(idx),
+      onDone: () => {
         setVoicePlaying(false);
         setVoiceStepIdx(null);
         setToast("已到达目的地");
       },
-      1500,
-    );
+    });
   };
 
   return (
@@ -350,6 +371,9 @@ export default function RideSnapDemo() {
                 weather={weather}
                 voicePlaying={voicePlaying}
                 voiceStepIdx={voiceStepIdx}
+                myPosition={myPosition}
+                myBearing={myBearing}
+                navProgress={navProgress}
                 onPickDestination={() => setPickerOpen(true)}
                 onNav={startNavigation}
                 onVoiceNav={handleVoiceNav}
@@ -393,4 +417,3 @@ export default function RideSnapDemo() {
     </ConfigProvider>
   );
 }
-

@@ -12,6 +12,7 @@ export async function GET(req: Request) {
   const keywords = searchParams.get("keywords");
   const location = searchParams.get("location");
   const city = searchParams.get("city");
+  const type = searchParams.get("type");
   if (!keywords) {
     return NextResponse.json({ error: "keywords 必填" }, { status: 400 });
   }
@@ -20,6 +21,7 @@ export async function GET(req: Request) {
   upstream.searchParams.set("keywords", keywords);
   if (location) upstream.searchParams.set("location", location);
   if (city) upstream.searchParams.set("city", city);
+  if (type) upstream.searchParams.set("type", type);
   try {
     const res = await fetch(upstream.toString(), { cache: "no-store" });
     return NextResponse.json(await res.json());

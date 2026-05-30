@@ -5,19 +5,22 @@ export function ControlChip({
   accent,
   icon,
   label,
+  shortLabel,
   onClick,
 }: {
   active: boolean;
   accent: string;
   icon: ReactNode;
   label: string;
+  shortLabel?: string;
   onClick: () => void;
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
-      className="flex items-center gap-1 rounded-full px-3 py-1.5 text-xs font-medium transition"
+      className="flex shrink-0 items-center gap-1 rounded-full px-2.5 py-1.5 text-xs font-medium transition"
+      aria-label={label}
       style={
         active
           ? {
@@ -29,7 +32,8 @@ export function ControlChip({
       }
     >
       {icon}
-      {label}
+      <span className="hidden sm:inline">{label}</span>
+      <span className="sm:hidden">{shortLabel ?? label}</span>
     </button>
   );
 }

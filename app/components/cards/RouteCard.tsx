@@ -3,16 +3,20 @@ import { Cloud, MapPin, Mic, MicOff, Navigation, Pencil, RefreshCw } from "lucid
 import { CardShell } from "../atoms/CardShell";
 import { MetricBig } from "../atoms/MetricBig";
 import { SegmentDot } from "../atoms/SegmentDot";
+import type { AmapBicyclingResult } from "../../lib/amap";
+import type { LatLng } from "../../lib/geo";
 import type { RouteCardProps } from "./card-types";
+
+const hasJsKey = typeof process !== "undefined" && !!process.env.NEXT_PUBLIC_AMAP_JS_KEY;
 
 const RealAmap = dynamic(() => import("./RealAmap").then((m) => m.RealAmap), {
   ssr: false,
   loading: () => (
-    <div className="pl-mid mt-3 relative h-[200px] overflow-hidden rounded-2xl border border-white/12 bg-black/35" style={{ willChange: "transform" }}>
+    <div className="pl-mid mt-3 relative h-[220px] overflow-hidden rounded-2xl border border-white/12 bg-black/35" style={{ willChange: "transform" }}>
       <div className="absolute inset-0 grid place-items-center text-[11px] text-white/55">
         <span className="inline-flex items-center gap-2">
           <RefreshCw size={12} className="animate-spin" />
-          地图加载中…
+          高德地图加载中…
         </span>
       </div>
     </div>
@@ -33,9 +37,11 @@ export function RouteCard({
   onNav,
   onVoiceNav,
   onReset,
+  myPosition,
+  myBearing,
+  navProgress,
 }: RouteCardProps) {
   const confidence = scanResult?.confidence ?? null;
-  const hasJsKey = !!process.env.NEXT_PUBLIC_AMAP_JS_KEY;
   return (
     <CardShell accent={profile.accent}>
       <div className="absolute inset-0 overflow-y-auto p-4">
@@ -139,14 +145,25 @@ export function RouteCard({
                 destination={destination.loc}
                 polyline={customRoute.polyline}
                 accent={profile.accent}
+                myPosition={myPosition}
+                myBearing={myBearing}
+                navProgress={navProgress}
+                fallback={
+                  <StaticRouteMap
+                    origin={origin}
+                    destination={destination.loc}
+                    route={customRoute}
+                    accent={profile.accent}
+                  />
+                }
               />
             ) : (
-              <div
-                className="pl-mid mt-3 rounded-2xl border border-dashed border-white/15 bg-black/30 p-4 text-center text-[11px] text-white/55"
-                style={{ willChange: "transform" }}
-              >
-                未配置 NEXT_PUBLIC_AMAP_JS_KEY, 真实地图不显示
-              </div>
+              <StaticRouteMap
+                origin={origin}
+                destination={destination.loc}
+                route={customRoute}
+                accent={profile.accent}
+              />
             )}
 
             {weather && (
@@ -222,4 +239,95 @@ export function RouteCard({
       </div>
     </CardShell>
   );
+}
+
+function StaticRouteMap({
+  origin,
+  destination,
+  route,
+  accent,
+}: {
+  origin: LatLng | null;
+  destination: LatLng;
+  route: AmapBicyclingResult;
+  accent: string;
+}) {
+  const points = normalizeRoutePoints(route.polyline.length >= 2 ? route.polyline : [origin, destination]);
+  const path = points
+    .map((p, idx) => `${idx === 0 ? "M" : "L"} ${p.x.toFixed(1)} ${p.y.toFixed(1)}`)
+    .join(" ");
+  const start = points[0] ?? { x: 24, y: 150 };
+  const end = points[points.length - 1] ?? { x: 320, y: 44 };
+
+  return (
+    <div
+      className="pl-mid mt-3 relative h-[200px] overflow-hidden rounded-2xl border border-white/12 bg-black/35"
+      style={{ willChange: "transform" }}
+    >
+      <div
+        className="absolute inset-0 opacity-35"
+        style={{
+          backgroundImage: `linear-gradient(90deg, ${accent}22 1px, transparent 1px), linear-gradient(0deg, rgba(255,255,255,0.14) 1px, transparent 1px)`,
+          backgroundSize: "22px 22px",
+        }}
+      />
+      <svg viewBox="0 0 360 200" className="absolute inset-0 h-full w-full">
+        <defs>
+          <filter id="route-glow" x="-30%" y="-30%" width="160%" height="160%">
+            <feGaussianBlur stdDeviation="4" result="blur" />
+            <feMerge>
+              <feMergeNode in="blur" />
+              <feMergeNode in="SourceGraphic" />
+            </feMerge>
+          </filter>
+        </defs>
+        <path
+          d="M 0 162 C 70 118, 112 168, 168 106 S 260 48, 360 74"
+          fill="none"
+          stroke="rgba(255,255,255,0.12)"
+          strokeWidth="3"
+          strokeDasharray="8 8"
+        />
+        <path
+          d={path}
+          fill="none"
+          stroke={accent}
+          strokeWidth="5"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          filter="url(#route-glow)"
+        />
+        <circle cx={start.x} cy={start.y} r="6" fill={accent} />
+        <circle cx={end.x} cy={end.y} r="7" fill="#fff" stroke={accent} strokeWidth="3" />
+      </svg>
+      <div className="absolute left-3 top-2 rounded-full bg-black/45 px-2 py-1 text-[10px] text-white/65 backdrop-blur">
+        实时路线预览
+      </div>
+      <div className="absolute bottom-2 left-3 right-3 flex items-center justify-between rounded-xl bg-black/50 px-3 py-2 text-[11px] text-white/65 backdrop-blur">
+        <span>起点 → 目的地</span>
+        <span style={{ color: accent }}>{(route.distance_m / 1000).toFixed(1)} km</span>
+      </div>
+    </div>
+  );
+}
+
+function normalizeRoutePoints(raw: Array<LatLng | null>): Array<{ x: number; y: number }> {
+  const valid = raw.filter((p): p is LatLng => !!p && Number.isFinite(p.lng) && Number.isFinite(p.lat));
+  if (valid.length < 2) {
+    return [
+      { x: 34, y: 158 },
+      { x: 122, y: 96 },
+      { x: 326, y: 52 },
+    ];
+  }
+  const minLng = Math.min(...valid.map((p) => p.lng));
+  const maxLng = Math.max(...valid.map((p) => p.lng));
+  const minLat = Math.min(...valid.map((p) => p.lat));
+  const maxLat = Math.max(...valid.map((p) => p.lat));
+  const lngSpan = maxLng - minLng || 0.01;
+  const latSpan = maxLat - minLat || 0.01;
+  return valid.map((p) => ({
+    x: 28 + ((p.lng - minLng) / lngSpan) * 304,
+    y: 168 - ((p.lat - minLat) / latSpan) * 136,
+  }));
 }

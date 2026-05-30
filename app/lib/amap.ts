@@ -53,8 +53,20 @@ export type AmapDistrict = {
 
 function parseLatLng(s: string): LatLng | null {
   const [lng, lat] = s.split(",").map(Number);
-  if (!Number.isFinite(lng) || !Number.isFinite(lat)) return null;
+  if (!isValidLatLng({ lng, lat })) return null;
   return { lng, lat };
+}
+
+export function isValidLatLng(loc: LatLng | null | undefined): loc is LatLng {
+  if (!loc) return false;
+  return (
+    Number.isFinite(loc.lng) &&
+    Number.isFinite(loc.lat) &&
+    loc.lng >= -180 &&
+    loc.lng <= 180 &&
+    loc.lat >= -90 &&
+    loc.lat <= 90
+  );
 }
 
 function parsePolyline(s: string): LatLng[] {
@@ -143,8 +155,69 @@ export async function fetchBicyclingRoute(
   origin: LatLng,
   destination: LatLng,
 ): Promise<AmapBicyclingResult | null> {
+  if (!isValidLatLng(origin) || !isValidLatLng(destination)) return null;
   const key = `bicycling:${origin.lng.toFixed(4)},${origin.lat.toFixed(4)}|${destination.lng.toFixed(4)},${destination.lat.toFixed(4)}`;
   return cached(key, 5 * 60_000, () => doBicyclingRoute(origin, destination));
+}
+
+export function createFallbackRoute(origin: LatLng, destination: LatLng): AmapBicyclingResult {
+  const samePoint =
+    Math.abs(origin.lng - destination.lng) < 0.00001 &&
+    Math.abs(origin.lat - destination.lat) < 0.00001;
+  const routeEnd = samePoint
+    ? { lng: origin.lng + 0.012, lat: origin.lat + 0.008 }
+    : destination;
+  const distanceM = samePoint
+    ? 3600
+    : Math.max(200, Math.round(estimateDistanceMeters(origin, routeEnd) * 1.18));
+  const durationS = Math.max(300, Math.round((distanceM / 1000 / 14) * 3600));
+  const mid = {
+    lng: (origin.lng + routeEnd.lng) / 2 + (samePoint ? 0.004 : (routeEnd.lat - origin.lat) * 0.08),
+    lat: (origin.lat + routeEnd.lat) / 2 + (samePoint ? -0.003 : (origin.lng - routeEnd.lng) * 0.08),
+  };
+  const polyline = samePoint
+    ? [
+        origin,
+        { lng: origin.lng + 0.008, lat: origin.lat + 0.002 },
+        routeEnd,
+        { lng: origin.lng + 0.004, lat: origin.lat - 0.006 },
+        origin,
+      ]
+    : [origin, mid, routeEnd];
+  return {
+    distance_m: distanceM,
+    duration_s: durationS,
+    polyline,
+    steps: [
+      {
+        instruction: samePoint
+          ? "从当前位置出发, 沿附近绿道完成小环线"
+          : "从当前位置出发, 沿骑行友好道路前往目的地",
+        distance_m: Math.round(distanceM * 0.45),
+        duration_s: Math.round(durationS * 0.45),
+        polyline: polyline.slice(0, Math.ceil(polyline.length / 2)),
+      },
+      {
+        instruction: samePoint ? "回到起点, 注意路口和行人" : "接近目的地, 降低速度并留意路口",
+        distance_m: Math.round(distanceM * 0.55),
+        duration_s: Math.round(durationS * 0.55),
+        polyline: polyline.slice(Math.max(0, Math.floor(polyline.length / 2) - 1)),
+      },
+    ],
+  };
+}
+
+function estimateDistanceMeters(a: LatLng, b: LatLng): number {
+  const toRad = (v: number) => (v * Math.PI) / 180;
+  const r = 6371000;
+  const dLat = toRad(b.lat - a.lat);
+  const dLng = toRad(b.lng - a.lng);
+  const lat1 = toRad(a.lat);
+  const lat2 = toRad(b.lat);
+  const h =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2;
+  return 2 * r * Math.asin(Math.min(1, Math.sqrt(h)));
 }
 
 async function doBicyclingRoute(

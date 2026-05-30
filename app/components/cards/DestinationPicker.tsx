@@ -36,6 +36,8 @@ export function DestinationPicker({
   const [hotSpots, setHotSpots] = useState<AmapPoi[]>([]);
   const [hotLoading, setHotLoading] = useState(true);
   const debounceRef = useRef<number | null>(null);
+  const trimmedKeyword = keyword.trim();
+  const visibleTips = trimmedKeyword ? tips : [];
 
   const originLoc = useMemo<LatLng | undefined>(
     () => (origin ? { lng: origin.lng, lat: origin.lat } : undefined),
@@ -43,31 +45,30 @@ export function DestinationPicker({
   );
 
   useEffect(() => {
-    if (!originLoc) {
-      setHotLoading(false);
-      return;
-    }
-    setHotLoading(true);
+    if (!originLoc) return;
+    let cancelled = false;
     fetchPoiAround(originLoc, { types: BIKE_RELATED_TYPES, radius: 5000 })
       .then((list) => {
+        if (cancelled) return;
         setHotSpots(list.slice(0, 8));
       })
-      .finally(() => setHotLoading(false));
+      .finally(() => {
+        if (!cancelled) setHotLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [originLoc]);
 
   useEffect(() => {
     if (debounceRef.current) window.clearTimeout(debounceRef.current);
-    if (!keyword.trim()) {
-      setTips([]);
-      setLoading(false);
-      return;
-    }
-    setLoading(true);
+    if (!trimmedKeyword) return;
     const controller = new AbortController();
     debounceRef.current = window.setTimeout(async () => {
       try {
+        setLoading(true);
         const list = await fetchInputTips(
-          keyword.trim(),
+          trimmedKeyword,
           originLoc,
           city,
           bikeOnly ? BIKE_RELATED_TYPES : undefined,
@@ -85,7 +86,7 @@ export function DestinationPicker({
       if (debounceRef.current) window.clearTimeout(debounceRef.current);
       controller.abort();
     };
-  }, [keyword, originLoc, city, bikeOnly]);
+  }, [trimmedKeyword, originLoc, city, bikeOnly]);
 
   return (
     <>
@@ -157,12 +158,12 @@ export function DestinationPicker({
         </div>
 
         <div className="mt-3 max-h-[46vh] overflow-y-auto px-4 pb-4">
-          {tips.length > 0 ? (
+          {visibleTips.length > 0 ? (
             <div className="space-y-1.5">
               <p className="text-[10px] uppercase tracking-[0.22em] text-white/40">
                 搜索结果
               </p>
-              {tips.map((tip) => (
+              {visibleTips.map((tip) => (
                 <PoiRow
                   key={tip.id}
                   accent={accent}
@@ -179,7 +180,7 @@ export function DestinationPicker({
                 />
               ))}
             </div>
-          ) : keyword && !loading ? (
+          ) : trimmedKeyword && !loading ? (
             <div className="rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-[11px] text-white/55">
               没有结果, 试试其他关键词或切换到「全部地点」
             </div>
@@ -189,12 +190,17 @@ export function DestinationPicker({
                 <Bike size={11} />
                 附近热门骑行地点
               </p>
-              {hotLoading && (
+              {!originLoc && (
+                <div className="rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-[11px] text-white/55">
+                  定位完成后会推荐附近骑行点, 也可以直接搜索目的地
+                </div>
+              )}
+              {originLoc && hotLoading && (
                 <div className="rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-[11px] text-white/55">
                   正在拉取你附近的骑行点…
                 </div>
               )}
-              {!hotLoading && hotSpots.length === 0 && (
+              {originLoc && !hotLoading && hotSpots.length === 0 && (
                 <div className="rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-[11px] text-white/55">
                   附近 5km 没找到合适的骑行点, 试试上方搜索
                 </div>

@@ -2,14 +2,13 @@
 
 import { Layers3, RefreshCw } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { isValidLatLng } from "../../lib/amap";
 import { loadAmap } from "../../lib/amap-loader";
 import type { LatLng } from "../../lib/geo";
+import type { NavProgress } from "./card-types";
 
 type AnyAMap = {
-  Map: new (
-    container: HTMLElement,
-    opts: Record<string, unknown>,
-  ) => AnyMapInstance;
+  Map: new (container: HTMLElement, opts: Record<string, unknown>) => AnyMapInstance;
   Marker: new (opts: Record<string, unknown>) => AnyOverlay;
   Polyline: new (opts: Record<string, unknown>) => AnyOverlay;
   TileLayer: {
@@ -21,35 +20,54 @@ type AnyAMap = {
 type AnyMapInstance = {
   setMapStyle?(s: string): void;
   add(o: AnyOverlay): void;
-  remove(o: AnyOverlay): void;
+  remove(o: AnyOverlay | AnyOverlay[]): void;
   setFitView(arr?: AnyOverlay[]): void;
   setPitch(p: number): void;
   setRotation?(deg: number): void;
   getPitch(): number;
+  setCenter?(center: [number, number]): void;
+  setZoomAndCenter?(zoom: number, center: [number, number]): void;
+  panTo?(center: [number, number]): void;
   destroy(): void;
 };
 
 type AnyOverlay = unknown;
+type AnyMarker = { setPosition: (p: [number, number]) => void; setContent?: (s: string) => void };
 
 export type RealAmapProps = {
   origin: LatLng | null;
   destination: LatLng | null;
   polyline: LatLng[];
   accent: string;
-  /** 缺 key 时显示的回落 UI */
+  myPosition?: LatLng | null;
+  myBearing?: number;
+  navProgress?: NavProgress | null;
   fallback?: React.ReactNode;
 };
 
-export function RealAmap({ origin, destination, polyline, accent, fallback }: RealAmapProps) {
+export function RealAmap({
+  origin,
+  destination,
+  polyline,
+  accent,
+  myPosition,
+  myBearing = 0,
+  navProgress,
+  fallback,
+}: RealAmapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<AnyMapInstance | null>(null);
   const overlaysRef = useRef<AnyOverlay[]>([]);
+  const myMarkerRef = useRef<(AnyOverlay & AnyMarker) | null>(null);
   const trafficRef = useRef<AnyOverlay | null>(null);
   const satelliteRef = useRef<AnyOverlay | null>(null);
   const amapRef = useRef<AnyAMap | null>(null);
+  const fitDoneRef = useRef(false);
+  const lastPolylineKeyRef = useRef<string>("");
   const [is3D, setIs3D] = useState(true);
   const [showTraffic, setShowTraffic] = useState(true);
   const [showSatellite, setShowSatellite] = useState(false);
+  const [followMe, setFollowMe] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
 
@@ -61,7 +79,7 @@ export function RealAmap({ origin, destination, polyline, accent, fallback }: Re
         amapRef.current = ns as AnyAMap;
         if (!containerRef.current) return;
         const map = new (ns as AnyAMap).Map(containerRef.current, {
-          zoom: 14,
+          zoom: 15,
           pitch: 50,
           viewMode: "3D",
           center: [120.7, 27.9],
@@ -79,11 +97,12 @@ export function RealAmap({ origin, destination, polyline, accent, fallback }: Re
       try {
         mapRef.current?.destroy();
       } catch {
-        // ignore destroy race
+        /* race */
       }
       mapRef.current = null;
       amapRef.current = null;
       overlaysRef.current = [];
+      myMarkerRef.current = null;
       trafficRef.current = null;
       satelliteRef.current = null;
     };
@@ -93,67 +112,139 @@ export function RealAmap({ origin, destination, polyline, accent, fallback }: Re
     if (!ready || !mapRef.current || !amapRef.current) return;
     const ns = amapRef.current;
     const map = mapRef.current;
-    for (const o of overlaysRef.current) map.remove(o);
-    overlaysRef.current = [];
+    try {
+      for (const o of overlaysRef.current) map.remove(o);
+      overlaysRef.current = [];
 
-    if (origin) {
-      const m = new ns.Marker({
-        position: [origin.lng, origin.lat],
-        anchor: "center",
-        content: markerHtml("起点", accent, "#000"),
-      });
-      map.add(m);
-      overlaysRef.current.push(m);
-    }
-    if (destination) {
-      const m = new ns.Marker({
-        position: [destination.lng, destination.lat],
-        anchor: "center",
-        content: markerHtml("终点", "#fff", "#000"),
-      });
-      map.add(m);
-      overlaysRef.current.push(m);
-    }
-    if (polyline.length >= 2) {
-      const path = polyline.map((p) => [p.lng, p.lat]);
-      const line = new ns.Polyline({
-        path,
-        strokeColor: accent,
-        strokeWeight: 6,
-        strokeOpacity: 0.95,
-        lineJoin: "round",
-        showDir: true,
-      });
-      map.add(line);
-      overlaysRef.current.push(line);
-      map.setFitView();
-    } else if (origin && destination) {
-      const line = new ns.Polyline({
-        path: [
-          [origin.lng, origin.lat],
-          [destination.lng, destination.lat],
-        ],
-        strokeColor: accent,
-        strokeWeight: 3,
-        strokeOpacity: 0.6,
-        strokeStyle: "dashed",
-      });
-      map.add(line);
-      overlaysRef.current.push(line);
-      map.setFitView();
+      const safeOrigin = isValidLatLng(origin) ? origin : null;
+      const safeDestination = isValidLatLng(destination) ? destination : null;
+      const safePolyline = polyline.filter(isValidLatLng);
+
+      if (safePolyline.length >= 2) {
+        const path = safePolyline.map((p) => [p.lng, p.lat]);
+        const glow = new ns.Polyline({
+          path,
+          strokeColor: accent,
+          strokeWeight: 14,
+          strokeOpacity: 0.18,
+          lineJoin: "round",
+        });
+        const core = new ns.Polyline({
+          path,
+          strokeColor: accent,
+          strokeWeight: 6,
+          strokeOpacity: 0.95,
+          lineJoin: "round",
+          showDir: true,
+        });
+        map.add(glow);
+        map.add(core);
+        overlaysRef.current.push(glow, core);
+      } else if (safeOrigin && safeDestination) {
+        const dashed = new ns.Polyline({
+          path: [
+            [safeOrigin.lng, safeOrigin.lat],
+            [safeDestination.lng, safeDestination.lat],
+          ],
+          strokeColor: accent,
+          strokeWeight: 3,
+          strokeOpacity: 0.55,
+          strokeStyle: "dashed",
+        });
+        map.add(dashed);
+        overlaysRef.current.push(dashed);
+      }
+
+      if (safeOrigin) {
+        const m = new ns.Marker({
+          position: [safeOrigin.lng, safeOrigin.lat],
+          anchor: "bottom-center",
+          offset: [0, 0],
+          content: markerPinHtml("起", "#22c55e", "white", "▶"),
+        });
+        map.add(m);
+        overlaysRef.current.push(m);
+      }
+      if (safeDestination) {
+        const m = new ns.Marker({
+          position: [safeDestination.lng, safeDestination.lat],
+          anchor: "bottom-center",
+          content: markerPinHtml("终", "#ef4444", "white", "🏁"),
+        });
+        map.add(m);
+        overlaysRef.current.push(m);
+      }
+
+      const last = safePolyline[safePolyline.length - 1];
+      const polylineKey = `${safePolyline.length}:${safePolyline[0]?.lng ?? 0},${safePolyline[0]?.lat ?? 0}:${last?.lng ?? 0},${last?.lat ?? 0}`;
+      if (polylineKey !== lastPolylineKeyRef.current) {
+        lastPolylineKeyRef.current = polylineKey;
+        fitDoneRef.current = false;
+      }
+      if (!fitDoneRef.current && overlaysRef.current.length > 0) {
+        map.setFitView(overlaysRef.current);
+        fitDoneRef.current = true;
+      }
+    } catch (err) {
+      const message = `路线渲染失败: ${err instanceof Error ? err.message : String(err)}`;
+      window.setTimeout(() => setError(message), 0);
     }
   }, [ready, origin, destination, polyline, accent]);
+
+  /** 我的位置: marker + 视角跟随 */
+  useEffect(() => {
+    if (!ready || !mapRef.current || !amapRef.current) return;
+    const ns = amapRef.current;
+    const map = mapRef.current;
+    if (!isValidLatLng(myPosition ?? null)) {
+      if (myMarkerRef.current) {
+        try { map.remove(myMarkerRef.current); } catch { /* ignore */ }
+        myMarkerRef.current = null;
+      }
+      return;
+    }
+    const pos: [number, number] = [myPosition!.lng, myPosition!.lat];
+    if (!myMarkerRef.current) {
+      const m = new ns.Marker({
+        position: pos,
+        anchor: "center",
+        zIndex: 200,
+        content: myPositionHtml(accent, myBearing),
+      });
+      map.add(m);
+      myMarkerRef.current = m as AnyOverlay & AnyMarker;
+    } else {
+      try {
+        myMarkerRef.current.setPosition(pos);
+        myMarkerRef.current.setContent?.(myPositionHtml(accent, myBearing));
+      } catch {
+        /* ignore */
+      }
+    }
+    if (followMe) {
+      try {
+        if (map.panTo) map.panTo(pos);
+        else map.setCenter?.(pos);
+      } catch {
+        /* ignore */
+      }
+    }
+  }, [ready, myPosition, myBearing, accent, followMe]);
 
   useEffect(() => {
     if (!ready || !mapRef.current || !amapRef.current) return;
     const ns = amapRef.current;
     const map = mapRef.current;
-    if (showTraffic && !trafficRef.current) {
-      const t = new ns.TileLayer.Traffic({ autoRefresh: true, interval: 60, zIndex: 10 });
-      map.add(t);
-      trafficRef.current = t;
-    } else if (!showTraffic && trafficRef.current) {
-      map.remove(trafficRef.current);
+    try {
+      if (showTraffic && !trafficRef.current) {
+        const t = new ns.TileLayer.Traffic({ autoRefresh: true, interval: 60, zIndex: 10 });
+        map.add(t);
+        trafficRef.current = t;
+      } else if (!showTraffic && trafficRef.current) {
+        map.remove(trafficRef.current);
+        trafficRef.current = null;
+      }
+    } catch {
       trafficRef.current = null;
     }
   }, [ready, showTraffic]);
@@ -162,12 +253,16 @@ export function RealAmap({ origin, destination, polyline, accent, fallback }: Re
     if (!ready || !mapRef.current || !amapRef.current) return;
     const ns = amapRef.current;
     const map = mapRef.current;
-    if (showSatellite && !satelliteRef.current) {
-      const s = new ns.TileLayer.Satellite({ zIndex: 5 });
-      map.add(s);
-      satelliteRef.current = s;
-    } else if (!showSatellite && satelliteRef.current) {
-      map.remove(satelliteRef.current);
+    try {
+      if (showSatellite && !satelliteRef.current) {
+        const s = new ns.TileLayer.Satellite({ zIndex: 5 });
+        map.add(s);
+        satelliteRef.current = s;
+      } else if (!showSatellite && satelliteRef.current) {
+        map.remove(satelliteRef.current);
+        satelliteRef.current = null;
+      }
+    } catch {
       satelliteRef.current = null;
     }
   }, [ready, showSatellite]);
@@ -179,7 +274,7 @@ export function RealAmap({ origin, destination, polyline, accent, fallback }: Re
 
   if (error) {
     return (
-      <div className="pl-mid mt-3 relative h-[200px] overflow-hidden rounded-2xl border border-white/12 bg-black/35">
+      <div className="pl-mid mt-3 relative h-[220px] overflow-hidden rounded-2xl border border-white/12 bg-black/35">
         {fallback ?? (
           <div className="grid h-full place-items-center px-4 text-center text-[12px] text-white/55">
             地图加载失败: {error}
@@ -189,9 +284,16 @@ export function RealAmap({ origin, destination, polyline, accent, fallback }: Re
     );
   }
 
+  const progressPct = navProgress && navProgress.totalM > 0
+    ? Math.min(100, (navProgress.progressM / navProgress.totalM) * 100)
+    : 0;
+  const remainingKm = navProgress
+    ? Math.max(0, (navProgress.totalM - navProgress.progressM) / 1000).toFixed(2)
+    : null;
+
   return (
     <div
-      className="pl-mid mt-3 relative h-[200px] overflow-hidden rounded-2xl border border-white/12 bg-black/35"
+      className="pl-mid mt-3 relative h-[220px] overflow-hidden rounded-2xl border border-white/12 bg-black/35"
       style={{ willChange: "transform" }}
     >
       <div ref={containerRef} className="absolute inset-0" />
@@ -213,7 +315,38 @@ export function RealAmap({ origin, destination, polyline, accent, fallback }: Re
           onClick={() => setShowSatellite((v) => !v)}
           accent={accent}
         />
+        {myPosition && (
+          <LayerToggle
+            on={followMe}
+            label="跟随"
+            onClick={() => setFollowMe((v) => !v)}
+            accent={accent}
+          />
+        )}
       </div>
+
+      {navProgress && (
+        <div className="pl-fg pointer-events-none absolute inset-x-2 bottom-2 z-10 rounded-xl border border-white/12 bg-black/65 px-3 py-2 backdrop-blur-md" style={{ willChange: "transform" }}>
+          <div className="flex items-center justify-between text-[10px] text-white/70">
+            <span>
+              已走 <span className="font-semibold text-white">{(navProgress.progressM / 1000).toFixed(2)}</span> km
+            </span>
+            <span>
+              剩余 <span className="font-semibold text-white">{remainingKm}</span> km · {Math.round(navProgress.speedKmh)} km/h
+            </span>
+          </div>
+          <div className="mt-1 h-1 overflow-hidden rounded-full bg-white/12">
+            <div
+              className="h-full rounded-full transition-all"
+              style={{
+                width: `${progressPct}%`,
+                background: `linear-gradient(90deg, ${accent}, white)`,
+                boxShadow: `0 0 12px ${accent}`,
+              }}
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -253,16 +386,41 @@ function LayerToggle({
   );
 }
 
-function markerHtml(text: string, bg: string, color: string) {
+function markerPinHtml(text: string, bg: string, color: string, emoji?: string) {
   return `<div style="
-    background:${bg};
-    color:${color};
-    padding:4px 8px;
-    border-radius:999px;
-    font-size:10px;
-    font-weight:700;
-    box-shadow:0 4px 14px rgba(0,0,0,0.5);
-    transform:translate(-50%,-100%);
-    border:2px solid white;
-  ">${text}</div>`;
+    position:relative;
+    transform:translateY(0);
+    pointer-events:none;
+  ">
+    <div style="
+      background:${bg};
+      color:${color};
+      width:32px;height:32px;
+      border-radius:50% 50% 50% 0;
+      transform:rotate(-45deg);
+      display:grid;place-items:center;
+      box-shadow:0 6px 18px rgba(0,0,0,.6), 0 0 0 3px ${bg}55;
+      border:2px solid white;
+    ">
+      <span style="transform:rotate(45deg);font-size:13px;font-weight:800;line-height:1;">
+        ${emoji ?? text}
+      </span>
+    </div>
+    <div style="
+      position:absolute;left:50%;top:34px;
+      transform:translateX(-50%);
+      font-size:9px;font-weight:700;color:white;
+      background:rgba(0,0,0,0.7);
+      padding:1px 6px;border-radius:999px;
+      white-space:nowrap;
+    ">${text}点</div>
+  </div>`;
+}
+
+function myPositionHtml(accent: string, bearing: number) {
+  return `<div style="position:relative;width:44px;height:44px;pointer-events:none;">
+    <div class="amap-me-ring" style="background:${accent}33;"></div>
+    <div style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:18px;height:18px;border-radius:50%;background:${accent};box-shadow:0 0 0 3px white, 0 4px 12px ${accent}99;"></div>
+    <div style="position:absolute;left:50%;top:50%;transform:translate(-50%,-100%) rotate(${bearing}deg);transform-origin:50% 100%;width:0;height:0;border-left:6px solid transparent;border-right:6px solid transparent;border-bottom:10px solid white;filter:drop-shadow(0 0 4px ${accent});"></div>
+  </div>`;
 }

@@ -4,6 +4,12 @@ import type { LatLng } from "../../lib/geo";
 import type { SceneProfile } from "../../lib/scene-profiles";
 import type { PickedDestination } from "./DestinationPicker";
 
+export type NavProgress = {
+  progressM: number;
+  totalM: number;
+  speedKmh: number;
+};
+
 export type RouteCardProps = {
   profile: SceneProfile;
   scanResult: SceneDetectResult | null;
@@ -14,6 +20,9 @@ export type RouteCardProps = {
   weather: AmapWeather | null;
   voicePlaying: boolean;
   voiceStepIdx: number | null;
+  myPosition: LatLng | null;
+  myBearing: number;
+  navProgress: NavProgress | null;
   onPickDestination: () => void;
   onNav: () => void;
   onVoiceNav: () => void;
