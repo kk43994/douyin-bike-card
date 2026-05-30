@@ -1,8 +1,16 @@
 @import "tailwindcss";
+@import "antd/dist/reset.css";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #06070a;
+  --foreground: #f7f7f4;
+  --panel: rgba(10, 13, 18, 0.78);
+  --panel-solid: #10131a;
+  --line: rgba(255, 255, 255, 0.18);
+  --cyan: #23f0ff;
+  --orange: #ff8a2a;
+  --lime: #b8ff4f;
+  --rose: #ff456f;
 }
 
 @theme inline {
@@ -12,15 +20,126 @@
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  min-height: 100%;
 }
 
 body {
-  background: var(--background);
+  margin: 0;
+  background:
+    radial-gradient(circle at 20% 12%, rgba(35, 240, 255, 0.16), transparent 28rem),
+    radial-gradient(circle at 84% 70%, rgba(255, 138, 42, 0.16), transparent 24rem),
+    linear-gradient(135deg, #050609 0%, #12141b 48%, #06070a 100%);
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
+  overflow-x: hidden;
+}
+
+button,
+input,
+textarea {
+  font: inherit;
+}
+
+button {
+  -webkit-tap-highlight-color: transparent;
+}
+
+.ant-x-bubble {
+  color: inherit;
+}
+
+.ant-x-sender {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.ant-x-prompts {
+  color: inherit;
+}
+
+@keyframes wheelSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes roadFlow {
+  from {
+    background-position: 0 0;
+  }
+  to {
+    background-position: 0 48px;
+  }
+}
+
+@keyframes shimmer {
+  0% {
+    transform: translateX(-120%);
+  }
+  100% {
+    transform: translateX(120%);
+  }
+}
+
+.terrain-lines {
+  position: absolute;
+  inset: -20%;
+}
+
+.mountain-lines {
+  background:
+    repeating-radial-gradient(ellipse at 38% 36%, transparent 0 18px, rgba(255, 138, 42, 0.24) 19px 20px, transparent 21px 38px),
+    repeating-linear-gradient(14deg, transparent 0 16px, rgba(255, 255, 255, 0.08) 17px 18px, transparent 19px 34px);
+  filter: blur(0.2px);
+  transform: rotate(-9deg) scale(1.08);
+}
+
+.city-lines {
+  background:
+    linear-gradient(90deg, rgba(35, 240, 255, 0.16) 1px, transparent 1px),
+    linear-gradient(0deg, rgba(255, 255, 255, 0.08) 1px, transparent 1px),
+    repeating-linear-gradient(117deg, transparent 0 30px, rgba(35, 240, 255, 0.14) 31px 32px, transparent 33px 60px);
+  background-size: 36px 36px, 36px 36px, 120px 120px;
+  transform: perspective(420px) rotateX(52deg) translateY(120px) scale(1.5);
+  transform-origin: bottom;
+}
+
+.mountain-ridge,
+.skyline {
+  position: absolute;
+  inset-inline: -12%;
+  bottom: 0;
+}
+
+.mountain-ridge {
+  clip-path: polygon(0 100%, 0 58%, 8% 50%, 15% 68%, 23% 37%, 31% 62%, 42% 31%, 53% 66%, 62% 44%, 72% 70%, 83% 36%, 92% 58%, 100% 47%, 100% 100%);
+}
+
+.ridge-back {
+  height: 260px;
+  background: rgba(0, 0, 0, 0.28);
+}
+
+.ridge-front {
+  height: 210px;
+  background: linear-gradient(180deg, rgba(28, 53, 28, 0.85), rgba(4, 5, 5, 0.94));
+}
+
+.skyline {
+  clip-path: polygon(0 100%, 0 62%, 6% 62%, 6% 44%, 12% 44%, 12% 70%, 18% 70%, 18% 36%, 26% 36%, 26% 58%, 34% 58%, 34% 22%, 44% 22%, 44% 66%, 52% 66%, 52% 42%, 60% 42%, 60% 72%, 69% 72%, 69% 30%, 78% 30%, 78% 62%, 86% 62%, 86% 48%, 95% 48%, 95% 64%, 100% 64%, 100% 100%);
+}
+
+.skyline-back {
+  height: 250px;
+  background: rgba(0, 0, 0, 0.24);
+}
+
+.skyline-front {
+  height: 210px;
+  background: linear-gradient(180deg, rgba(13, 31, 52, 0.82), rgba(5, 6, 10, 0.96));
 }
