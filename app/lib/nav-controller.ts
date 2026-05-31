@@ -73,8 +73,8 @@ export function startSimulatedRide(opts: StartOpts): NavCtl {
 
   const speakStep = (i: number) => {
     if (!voice) return;
-    const txt = `第 ${i + 1} 步, ${steps[i].instruction}`;
-    speak(txt);
+    const txt = `小R提醒你，第 ${i + 1} 步，${steps[i].instruction}`;
+    speak(txt, { provider: "minimax", style: "nav", rate: 1.13, pitch: 1, emotion: "calm" });
   };
 
   currentStep = 0;
@@ -98,7 +98,7 @@ export function startSimulatedRide(opts: StartOpts): NavCtl {
       });
       stopped = true;
       if (timer) clearInterval(timer);
-      if (voice) speak("已到达目的地");
+      if (voice) speak("小R报到，到达目的地啦，今天也骑得很稳喔。", { provider: "minimax", style: "cute", rate: 1.1, pitch: 1, emotion: "happy" });
       onDone();
       return;
     }

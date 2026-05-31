@@ -9,6 +9,8 @@ export type GeoLocation = LatLng & {
   city?: string;
   /** 行政区编码 */
   adcode?: string;
+  /** 简短地名, 用于 AI 识别提示, e.g. "温州 · 龙湾区" */
+  shortPlace?: string;
 };
 
 const MOCK_FALLBACK: GeoLocation = {
@@ -18,6 +20,7 @@ const MOCK_FALLBACK: GeoLocation = {
   cityName: "杭州 · 西湖区 九溪 (mock fallback)",
   city: "杭州市",
   adcode: "330106",
+  shortPlace: "杭州 · 西湖区",
 };
 
 export async function getBrowserLocation(timeoutMs = 8000): Promise<LatLng | null> {
@@ -51,7 +54,16 @@ type RegeoResult = {
   formatted: string | null;
   city: string | null;
   adcode: string | null;
+  shortPlace: string | null;
 };
+
+/** 把 "温州市"/"龙湾区" 组装成 "温州 · 龙湾区"; 去掉「市」后缀更紧凑 */
+function buildShortPlace(city: string, district: string): string | null {
+  const c = city.replace(/市$/, "").trim();
+  const d = district.trim();
+  if (c && d) return `${c} · ${d}`;
+  return c || d || null;
+}
 
 const regeoCache = new Map<string, { value: RegeoResult; expireAt: number }>();
 const regeoInflight = new Map<string, Promise<RegeoResult | null>>();
@@ -74,10 +86,13 @@ export async function reverseGeocode(loc: LatLng): Promise<RegeoResult | null> {
       const comp = r?.addressComponent ?? {};
       const cityRaw = Array.isArray(comp.city) ? "" : String(comp.city ?? "");
       const province = Array.isArray(comp.province) ? "" : String(comp.province ?? "");
+      const district = Array.isArray(comp.district) ? "" : String(comp.district ?? "");
+      const cityName = cityRaw || province || "";
       const value: RegeoResult = {
         formatted: r?.formatted_address ?? null,
-        city: cityRaw || province || null,
+        city: cityName || null,
         adcode: Array.isArray(comp.adcode) ? null : String(comp.adcode ?? "") || null,
+        shortPlace: buildShortPlace(cityName, district),
       };
       regeoCache.set(key, { value, expireAt: Date.now() + 10 * 60_000 });
       return value;
@@ -101,5 +116,6 @@ export async function getCurrentLocationSmart(): Promise<GeoLocation> {
     cityName: r?.formatted ?? `${browser.lng.toFixed(4)}, ${browser.lat.toFixed(4)}`,
     city: r?.city ?? undefined,
     adcode: r?.adcode ?? undefined,
+    shortPlace: r?.shortPlace ?? undefined,
   };
 }

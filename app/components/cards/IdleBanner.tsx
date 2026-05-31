@@ -1,4 +1,8 @@
-import { RadioTower } from "lucide-react";
+"use client";
+
+import { useEffect, useRef } from "react";
+import gsap from "gsap";
+import { Radar, ChevronRight, Sparkles } from "lucide-react";
 import type { SceneProfile } from "../../lib/scene-profiles";
 
 export function IdleBanner({
@@ -8,33 +12,49 @@ export function IdleBanner({
   profile: SceneProfile;
   onScan: () => void;
 }) {
+  void profile;
+  const rootRef = useRef<HTMLDivElement>(null);
+
+  // 自然入场: 从下方滑入 + 淡入 + 轻微回弹
+  useEffect(() => {
+    const el = rootRef.current;
+    if (!el) return;
+    const ctx = gsap.context(() => {
+      gsap.fromTo(
+        el,
+        { y: 36, autoAlpha: 0, scale: 0.96 },
+        { y: 0, autoAlpha: 1, scale: 1, duration: 0.6, ease: "back.out(1.6)" },
+      );
+    }, rootRef);
+    return () => ctx.revert();
+  }, []);
+
   return (
-    <div className="absolute bottom-[78px] left-3 right-3 z-30 flex items-center gap-2.5 rounded-2xl border border-white/15 bg-[#0a0c12]/85 p-2.5 shadow-[0_18px_50px_rgba(0,0,0,0.55)] backdrop-blur-2xl">
-      <div
-        className="grid h-11 w-11 shrink-0 place-items-center rounded-xl"
-        style={{
-          background: `linear-gradient(135deg, ${profile.accent}, ${profile.accentSoft})`,
-          boxShadow: `0 4px 18px ${profile.accentSoft}`,
-        }}
-      >
-        <RadioTower size={20} color="#0a0c12" strokeWidth={2.4} />
-      </div>
-      <div className="min-w-0 flex-1">
-        <p className="truncate text-[10px] uppercase tracking-[0.22em] text-white/45">
-          RideSnap · 智能骑行卡
-        </p>
-        <p className="truncate text-sm font-semibold">识别你附近最适合的骑行赛道</p>
-      </div>
+    <div
+      ref={rootRef}
+      className="pointer-events-auto absolute inset-x-0 bottom-[78px] z-40 flex justify-start pl-3.5"
+      style={{ willChange: "transform, opacity" }}
+    >
+      {/* 抖音原生感胶囊: 半透明黑底 + 白字, 无色块边框, 不抢镜 */}
       <button
         type="button"
         onClick={onScan}
-        className="shrink-0 rounded-full px-3.5 py-1.5 text-xs font-semibold text-black"
-        style={{
-          background: profile.accent,
-          boxShadow: `0 4px 14px ${profile.accentSoft}`,
-        }}
+        className="relative z-10 flex items-center gap-2 rounded-full border border-white/20 bg-black/35 py-2 pl-2.5 pr-3 backdrop-blur-md transition active:scale-[0.97]"
       >
-        开始识别
+        {/* 雷达图标 + 呼吸微光 (AI 正在感知周边) */}
+        <span className="relative grid h-6 w-6 shrink-0 place-items-center">
+          <span className="idle-radar-pulse absolute inset-0 rounded-full bg-white/70" />
+          <Radar size={15} strokeWidth={2.4} className="relative text-white" />
+        </span>
+        {/* AI 徽标 */}
+        <span className="flex items-center gap-0.5 rounded-full bg-white/15 px-1.5 py-0.5 text-[10px] font-bold text-white">
+          <Sparkles size={10} className="idle-ai-spark" />
+          AI
+        </span>
+        <span className="text-[13px] font-semibold text-white drop-shadow-[0_1px_4px_rgba(0,0,0,0.6)]">
+          识别附近骑行赛道
+        </span>
+        <ChevronRight size={15} className="text-white/70" />
       </button>
     </div>
   );

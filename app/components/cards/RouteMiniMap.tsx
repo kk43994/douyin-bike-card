@@ -40,7 +40,7 @@ export function RouteMiniMap({ route, accent }: { route: RoutePlan; accent: stri
         <ShieldAlert size={12} color={accent} />
       </div>
       <div className="absolute bottom-2 left-3 right-3 flex items-center justify-between rounded-md bg-black/40 px-2 py-1 text-[10px] text-white/65 backdrop-blur">
-        <span>高德路径规划 · mock</span>
+        <span>AI 路径规划</span>
         <span style={{ color: accent }}>{route.distance_km.toFixed(1)} km</span>
       </div>
     </div>

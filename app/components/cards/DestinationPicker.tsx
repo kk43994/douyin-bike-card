@@ -1,5 +1,6 @@
 import { Bike, Locate, MapPin, Search, X } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { gsap } from "gsap";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   type AmapPoi,
   type AmapTip,
@@ -36,8 +37,19 @@ export function DestinationPicker({
   const [hotSpots, setHotSpots] = useState<AmapPoi[]>([]);
   const [hotLoading, setHotLoading] = useState(true);
   const debounceRef = useRef<number | null>(null);
+  const overlayRef = useRef<HTMLDivElement | null>(null);
+  const panelRef = useRef<HTMLDivElement | null>(null);
+  const listRef = useRef<HTMLDivElement | null>(null);
+  const bikeFilterRef = useRef<HTMLButtonElement | null>(null);
+  const allFilterRef = useRef<HTMLButtonElement | null>(null);
+  const closingRef = useRef(false);
   const trimmedKeyword = keyword.trim();
   const visibleTips = trimmedKeyword ? tips : [];
+  const resultAnimationKey = visibleTips.map((tip) => tip.id).join("|");
+  const hotSpotAnimationKey = hotSpots.map((spot) => spot.id).join("|");
+  const reducedMotion =
+    typeof window !== "undefined" &&
+    window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
   const originLoc = useMemo<LatLng | undefined>(
     () => (origin ? { lng: origin.lng, lat: origin.lat } : undefined),
@@ -88,58 +100,148 @@ export function DestinationPicker({
     };
   }, [trimmedKeyword, originLoc, city, bikeOnly]);
 
+  useLayoutEffect(() => {
+    if (reducedMotion) return;
+    const ctx = gsap.context(() => {
+      gsap.fromTo(
+        overlayRef.current,
+        { opacity: 0 },
+        { opacity: 1, duration: 0.22, ease: "power2.out" },
+      );
+      gsap.fromTo(
+        panelRef.current,
+        { opacity: 0, y: 28, scale: 0.98, filter: "blur(8px)" },
+        {
+          opacity: 1,
+          y: 0,
+          scale: 1,
+          filter: "blur(0px)",
+          duration: 0.42,
+          ease: "power3.out",
+        },
+      );
+      gsap.fromTo(
+        ".destination-stagger",
+        { opacity: 0, y: 10 },
+        { opacity: 1, y: 0, duration: 0.32, stagger: 0.045, delay: 0.12, ease: "power2.out" },
+      );
+    }, panelRef);
+    return () => ctx.revert();
+  }, [reducedMotion]);
+
+  useEffect(() => {
+    if (reducedMotion || !listRef.current) return;
+    const rows = gsap.utils.toArray<HTMLElement>(".destination-poi-row", listRef.current);
+    if (rows.length === 0) return;
+    gsap.fromTo(
+      rows,
+      { opacity: 0, y: 12, scale: 0.985 },
+      {
+        opacity: 1,
+        y: 0,
+        scale: 1,
+        duration: 0.28,
+        stagger: 0.035,
+        ease: "power2.out",
+        overwrite: "auto",
+      },
+    );
+  }, [reducedMotion, resultAnimationKey, hotSpotAnimationKey, hotLoading, trimmedKeyword]);
+
+  const handleClose = useCallback(() => {
+    if (closingRef.current) return;
+    closingRef.current = true;
+    if (reducedMotion) {
+      onClose();
+      return;
+    }
+    gsap
+      .timeline({ onComplete: onClose })
+      .to(panelRef.current, {
+        opacity: 0,
+        y: 18,
+        scale: 0.985,
+        filter: "blur(6px)",
+        duration: 0.18,
+        ease: "power2.in",
+      })
+      .to(overlayRef.current, { opacity: 0, duration: 0.14, ease: "power2.in" }, "<");
+  }, [onClose, reducedMotion]);
+
+  const setFilter = useCallback(
+    (nextBikeOnly: boolean) => {
+      setBikeOnly(nextBikeOnly);
+      if (reducedMotion) return;
+      const target = nextBikeOnly ? bikeFilterRef.current : allFilterRef.current;
+      gsap.fromTo(
+        target,
+        { scale: 0.96 },
+        { scale: 1, duration: 0.34, ease: "elastic.out(1, 0.65)", overwrite: "auto" },
+      );
+    },
+    [reducedMotion],
+  );
+
   return (
     <>
       <div
+        ref={overlayRef}
         className="absolute inset-0 z-40 bg-black/60 backdrop-blur-sm"
-        onClick={onClose}
+        onClick={handleClose}
       />
-      <div className="absolute bottom-[78px] left-3 right-3 z-50 max-h-[72vh] overflow-hidden rounded-3xl border border-white/15 bg-[#0c0f16]/96 shadow-[0_24px_50px_rgba(0,0,0,0.65)]">
-        <div className="flex items-center justify-between px-4 pt-4">
+      <div
+        ref={panelRef}
+        className="absolute bottom-[78px] left-3 right-3 z-50 max-h-[72vh] overflow-hidden rounded-[26px] border border-white/15 bg-[#0c0f16]/96 shadow-[0_24px_50px_rgba(0,0,0,0.65)]"
+      >
+        <div className="destination-stagger flex items-start justify-between px-4 pt-4">
           <div>
-            <p className="text-[10px] uppercase tracking-[0.24em] text-white/45">
+            <p className="text-[10px] leading-none tracking-[0.2em] text-white/45">
               想骑去哪
             </p>
-            <h3 className="mt-0.5 text-base font-semibold">挑一个目的地</h3>
+            <h3 className="mt-2 text-[19px] font-semibold leading-none tracking-normal">
+              挑一个目的地
+            </h3>
           </div>
           <button
             type="button"
-            onClick={onClose}
-            className="grid h-8 w-8 place-items-center rounded-full border border-white/15 text-white/70 hover:bg-white/10"
+            onClick={handleClose}
+            className="grid h-9 w-9 place-items-center rounded-full border border-white/15 text-white/75 transition hover:rotate-90 hover:bg-white/10 active:scale-95"
           >
-            <X size={14} />
+            <X size={16} />
           </button>
         </div>
 
-        <div className="px-4 pt-3">
-          <div className="flex items-center gap-2 rounded-full border border-white/15 bg-white/[0.06] px-3 py-2">
-            <Search size={14} className="text-white/55" />
+        <div className="destination-stagger px-4 pt-4">
+          <div className="group flex h-10 items-center gap-2 rounded-full border border-white/15 bg-white/[0.06] px-3 transition focus-within:border-white/25 focus-within:bg-white/[0.08] focus-within:shadow-[0_0_0_3px_rgba(35,240,255,0.08)]">
+            <Search size={14} className="text-white/55 transition group-focus-within:text-white/80" />
             <input
               value={keyword}
               onChange={(e) => setKeyword(e.target.value)}
               placeholder={bikeOnly ? "搜公园 / 绿道 / 景区 / 自行车店" : "搜任意地点"}
               autoFocus
-              className="min-w-0 flex-1 bg-transparent text-sm text-white placeholder:text-white/35 focus:outline-none"
+              className="min-w-0 flex-1 bg-transparent text-[13px] leading-none text-white placeholder:text-white/35 focus:outline-none"
             />
             {loading && <span className="text-[10px] text-white/55">查询中…</span>}
           </div>
-          <div className="mt-2 flex items-center gap-1">
+          <div className="mt-3 flex items-center gap-2">
             <button
+              ref={bikeFilterRef}
               type="button"
-              onClick={() => setBikeOnly(true)}
-              className="flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-medium transition"
+              onClick={() => setFilter(true)}
+              className="flex h-8 items-center gap-1.5 rounded-full px-3 text-[13px] font-medium leading-none transition hover:-translate-y-0.5 active:scale-[0.96]"
               style={
                 bikeOnly
                   ? { background: `${accent}26`, color: accent, boxShadow: `0 0 0 1px ${accent}55` }
                   : { color: "rgba(255,255,255,0.55)" }
               }
             >
-              <Bike size={11} /> 骑行相关
+              <Bike size={13} /> 骑行相关
             </button>
             <button
+              ref={allFilterRef}
               type="button"
-              onClick={() => setBikeOnly(false)}
-              className="rounded-full px-2.5 py-1 text-[11px] font-medium transition"
+              onClick={() => setFilter(false)}
+              className="h-8 rounded-full px-3 text-[13px] font-medium leading-none transition hover:-translate-y-0.5 active:scale-[0.96]"
               style={
                 !bikeOnly
                   ? { background: "rgba(255,255,255,0.12)", color: "white" }
@@ -150,17 +252,17 @@ export function DestinationPicker({
             </button>
           </div>
           {origin?.cityName && (
-            <p className="mt-2 flex items-center gap-1 text-[10px] text-white/45">
-              <Locate size={10} />
+            <p className="mt-2 flex items-center gap-1.5 text-[11px] leading-none text-white/45">
+              <Locate size={11} />
               <span className="truncate">{compactCity(origin.cityName)}</span>
             </p>
           )}
         </div>
 
-        <div className="mt-3 max-h-[46vh] overflow-y-auto px-4 pb-4">
+        <div ref={listRef} className="destination-stagger mt-4 max-h-[46vh] overflow-y-auto px-4 pb-4">
           {visibleTips.length > 0 ? (
-            <div className="space-y-1.5">
-              <p className="text-[10px] uppercase tracking-[0.22em] text-white/40">
+            <div className="space-y-2">
+              <p className="text-[10px] leading-none tracking-[0.18em] text-white/40">
                 搜索结果
               </p>
               {visibleTips.map((tip) => (
@@ -181,27 +283,27 @@ export function DestinationPicker({
               ))}
             </div>
           ) : trimmedKeyword && !loading ? (
-            <div className="rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-[11px] text-white/55">
+            <div className="destination-poi-row rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2.5 text-[12px] leading-5 text-white/55">
               没有结果, 试试其他关键词或切换到「全部地点」
             </div>
           ) : (
-            <div className="space-y-1.5">
-              <p className="flex items-center gap-1 text-[10px] uppercase tracking-[0.22em] text-white/40">
-                <Bike size={11} />
+            <div className="space-y-2">
+              <p className="flex items-center gap-1.5 text-[11px] leading-none tracking-[0.12em] text-white/42">
+                <Bike size={12} />
                 附近热门骑行地点
               </p>
               {!originLoc && (
-                <div className="rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-[11px] text-white/55">
+                <div className="destination-poi-row rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2.5 text-[12px] leading-5 text-white/55">
                   定位完成后会推荐附近骑行点, 也可以直接搜索目的地
                 </div>
               )}
               {originLoc && hotLoading && (
-                <div className="rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-[11px] text-white/55">
+                <div className="destination-poi-row rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2.5 text-[12px] leading-5 text-white/55">
                   正在拉取你附近的骑行点…
                 </div>
               )}
               {originLoc && !hotLoading && hotSpots.length === 0 && (
-                <div className="rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-[11px] text-white/55">
+                <div className="destination-poi-row rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2.5 text-[12px] leading-5 text-white/55">
                   附近 5km 没找到合适的骑行点, 试试上方搜索
                 </div>
               )}
@@ -235,7 +337,7 @@ export function DestinationPicker({
                   source: "self",
                 })
               }
-              className="mt-3 flex w-full items-center justify-center gap-1.5 rounded-full border border-white/15 bg-white/[0.05] py-2 text-xs font-semibold text-white hover:bg-white/[0.1]"
+              className="destination-poi-row mt-3 flex h-9 w-full items-center justify-center gap-1.5 rounded-full border border-white/15 bg-white/[0.05] text-xs font-semibold text-white transition hover:-translate-y-0.5 hover:bg-white/[0.1] active:scale-[0.97]"
             >
               <Locate size={13} />
               起终点都设为我的位置
@@ -262,9 +364,13 @@ function PoiRow({
     <button
       type="button"
       onClick={onClick}
-      className="flex w-full items-start gap-2 rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-left hover:bg-white/[0.08]"
+      className="destination-poi-row group flex w-full items-start gap-2 rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-left transition duration-200 hover:-translate-y-0.5 hover:border-white/16 hover:bg-white/[0.08] active:scale-[0.985]"
     >
-      <MapPin size={14} className="mt-0.5 shrink-0" color={accent} />
+      <MapPin
+        size={14}
+        className="mt-0.5 shrink-0 transition duration-200 group-hover:scale-110"
+        color={accent}
+      />
       <div className="min-w-0 flex-1">
         <p className="truncate text-sm font-semibold">{title}</p>
         {subtitle && <p className="truncate text-[11px] text-white/55">{subtitle}</p>}

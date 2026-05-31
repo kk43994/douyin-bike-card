@@ -42,19 +42,30 @@ export function useCardDeck({ total, enabled, threshold = 0.18 }: UseCardDeckOpt
       const cards = el.querySelectorAll<HTMLDivElement>(".deck-card");
       cards.forEach((card, idx) => {
         const offset = idx - idxCenter + dragOffsetPct;
-        const cardTarget = {
-          xPercent: offset * 100,
-          scale: Math.abs(offset) < 0.5 ? 1 - Math.abs(offset) * 0.08 : 0.94,
-          autoAlpha: Math.abs(offset) < 0.5 ? 1 - Math.abs(offset) * 0.4 : 0.55,
-        };
+        const hasAmap = Boolean(card.querySelector(".amap-card-host"));
+        const cardTarget = hasAmap
+          ? {
+              xPercent: offset * 100,
+              scale: 1,
+              autoAlpha: Math.abs(offset) < 0.5 ? 1 - Math.abs(offset) * 0.4 : 0.55,
+            }
+          : {
+              xPercent: offset * 100,
+              scale: Math.abs(offset) < 0.5 ? 1 - Math.abs(offset) * 0.08 : 0.94,
+              autoAlpha: Math.abs(offset) < 0.5 ? 1 - Math.abs(offset) * 0.4 : 0.55,
+            };
         if (animate) {
           gsap.to(card, { ...cardTarget, duration: 0.55, ease: "power3.out", overwrite: true });
         } else {
           gsap.set(card, cardTarget);
         }
+        const interactive = Math.abs(offset) < 0.5;
+        card.style.pointerEvents = interactive ? "auto" : "none";
+        card.setAttribute("aria-hidden", interactive ? "false" : "true");
         for (const { selector, ratio } of PARALLAX_LAYERS) {
           const node = card.querySelector(selector);
           if (!node) continue;
+          if (node.querySelector(".amap-card-host")) continue;
           const layerTarget = { xPercent: offset * ratio };
           if (animate) {
             gsap.to(node, { ...layerTarget, duration: 0.55, ease: "power3.out", overwrite: true });

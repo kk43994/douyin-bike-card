@@ -18,7 +18,8 @@ export async function GET(req: Request) {
   const upstream = new URL(ENDPOINTS[mode]);
   upstream.searchParams.set("key", key);
   for (const [k, v] of searchParams.entries()) {
-    if (k === "mode") continue;
+    // mode 是本地路由参数; key 由服务端注入, 禁止客户端覆盖 (防 key 注入/盗刷)
+    if (k === "mode" || k === "key") continue;
     upstream.searchParams.set(k, v);
   }
   if (mode === "around" && !upstream.searchParams.get("radius")) {

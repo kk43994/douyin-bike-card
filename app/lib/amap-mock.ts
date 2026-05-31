@@ -1,3 +1,5 @@
+import { riderAvatarAt } from "./rider-avatars";
+
 export type SceneKey = "mountain" | "city";
 
 export type LocationResult = {
@@ -45,6 +47,8 @@ export type RiderStatus = "riding" | "resting" | "looking";
 export type Rider = {
   id: string;
   name: string;
+  avatarUrl?: string;
+  avatarPosition?: string;
   distance_m: number;
   bearing_deg: number;
   vehicle: "mountain" | "road" | "commute";
@@ -173,6 +177,9 @@ const riderNames = [
   "破风手",
 ];
 
+const riderBearings = [226, 312, 24, 78, 134, 180, 262, 330, 48, 106, 208, 286];
+const riderDistanceRatios = [0.62, 0.82, 0.72, 0.88, 0.58, 0.78, 0.94, 0.48, 0.68, 0.84, 0.52, 0.9];
+
 function deterministicRand(seed: number) {
   let s = seed;
   return () => {
@@ -251,11 +258,13 @@ export async function getNearbyRiders(scene: SceneKey): Promise<RidersResult> {
   const rand = deterministicRand(scene === "mountain" ? 4242 : 8888);
   const count = 9 + Math.floor(rand() * 4);
   const riders: Rider[] = Array.from({ length: count }).map((_, idx) => {
-    const distance_m = Math.round(150 + rand() * 1450);
-    const bearing_deg = Math.round(rand() * 360);
+    const distance_m = Math.round(360 + riderDistanceRatios[idx % riderDistanceRatios.length] * 1240);
+    const bearing_deg = riderBearings[idx % riderBearings.length];
     return {
       id: `r-${idx}`,
       name: riderNames[(idx + Math.floor(rand() * riderNames.length)) % riderNames.length],
+      avatarUrl: riderAvatarAt(idx),
+      avatarPosition: idx === 0 ? "60% 42%" : undefined,
       distance_m,
       bearing_deg,
       vehicle: pickVehicle(scene, rand),

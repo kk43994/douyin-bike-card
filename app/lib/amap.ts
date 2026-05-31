@@ -89,7 +89,10 @@ function cached<T>(key: string, ttlMs: number, factory: () => Promise<T>): Promi
   if (existing) return existing as Promise<T>;
   const p = factory()
     .then((value) => {
-      cache.set(key, { value, expireAt: Date.now() + ttlMs });
+      // 不缓存失败/空结果 (null/undefined/空数组), 否则一次网络抖动会毒化整个 TTL 窗口
+      const isEmpty =
+        value == null || (Array.isArray(value) && value.length === 0);
+      if (!isEmpty) cache.set(key, { value, expireAt: Date.now() + ttlMs });
       return value;
     })
     .finally(() => {

@@ -17,6 +17,8 @@ export type SceneProfile = {
   accent: string;
   accentSoft: string;
   selfRoute: string;
+  /** 背景抖音视频 (放到 public/videos/ 下); 缺省/加载失败时回退到渐变背景 */
+  videoUrl?: string;
 };
 
 export const sceneProfiles: Record<SceneKey, SceneProfile> = {
@@ -24,7 +26,7 @@ export const sceneProfiles: Record<SceneKey, SceneProfile> = {
     key: "mountain",
     label: "山地环境",
     short: "MTB",
-    author: "@林道老王",
+    author: "@RideSnap卡片测试",
     authorTag: "粉丝 38.2w",
     videoTitle: "森林越野骑行 · 松林爬坡线",
     videoDesc:
@@ -38,12 +40,13 @@ export const sceneProfiles: Record<SceneKey, SceneProfile> = {
     accent: "#ff8a2a",
     accentSoft: "rgba(255, 138, 42, 0.22)",
     selfRoute: "九溪十八涧林道",
+    videoUrl: "/videos/feed.mp4",
   },
   city: {
     key: "city",
     label: "城市道路",
     short: "ROAD",
-    author: "@城南夜骑社",
+    author: "@RideSnap卡片测试",
     authorTag: "粉丝 24.7w",
     videoTitle: "城市夜骑公路车攻略 · 滨江霓虹巡航线",
     videoDesc:
@@ -57,5 +60,6 @@ export const sceneProfiles: Record<SceneKey, SceneProfile> = {
     accent: "#23f0ff",
     accentSoft: "rgba(35, 240, 255, 0.22)",
     selfRoute: "滨江夜骑霓虹巡航线",
+    videoUrl: "/videos/feed.mp4",
   },
 };

@@ -10,7 +10,7 @@ export function ControlChip({
 }: {
   active: boolean;
   accent: string;
-  icon: ReactNode;
+  icon?: ReactNode;
   label: string;
   shortLabel?: string;
   onClick: () => void;
@@ -19,16 +19,21 @@ export function ControlChip({
     <button
       type="button"
       onClick={onClick}
-      className="flex shrink-0 items-center gap-1 rounded-full px-2.5 py-1.5 text-xs font-medium transition"
+      className="flex h-8 shrink-0 items-center gap-1 rounded-full border px-2.5 text-[11.5px] font-semibold leading-none transition active:scale-[0.97]"
       aria-label={label}
       style={
         active
           ? {
-              background: `${accent}26`,
+              background: `${accent}24`,
               color: accent,
-              boxShadow: `0 0 0 1px ${accent}55, 0 0 18px ${accent}33`,
+              borderColor: `${accent}66`,
+              boxShadow: `0 0 16px ${accent}33`,
             }
-          : { color: "rgba(255,255,255,0.72)" }
+          : {
+              background: "rgba(255,255,255,0.04)",
+              color: "rgba(255,255,255,0.7)",
+              borderColor: "rgba(255,255,255,0.12)",
+            }
       }
     >
       {icon}
