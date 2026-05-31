@@ -18,7 +18,7 @@ export function CardDeckShell({
       <div
         ref={deckRef}
         className="absolute bottom-[78px] left-0 right-0 z-30 select-none"
-        style={{ touchAction: "pan-y" }}
+        style={{ touchAction: "pan-x pan-y" }}
       >
         <div className="relative mx-3 h-[60vh] min-h-[440px]">{children}</div>
       </div>
